@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telecom-cdr
+  labels:
+    app: telecom-cdr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telecom-cdr
+  template:
+    metadata:
+      labels:
+        app: telecom-cdr
+    spec:
+      containers:
+        - name: telecom-cdr
+          image: nginx:alpine
+          ports:
+            - containerPort: 8000
+          env:
+            - name: APP_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: telecom-cdr-config
+                  key: APP_NAME
+            - name: DATABASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telecom-cdr-config
+                  key: DATABASE_URL
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

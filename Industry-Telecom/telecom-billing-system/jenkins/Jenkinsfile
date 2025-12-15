@@ -1,0 +1,73 @@
+pipeline {
+  agent any
+
+  environment {
+    DOCKER_REGISTRY = credentials('docker-registry-url')
+    DOCKER_CREDENTIALS = credentials('docker-credentials')
+    KUBECONFIG_CRED = credentials('kubeconfig-file')
+    IMAGE_REPO = "telecom-billing-cdr"
+    IMAGE_TAG = "${env.BUILD_NUMBER}"
+    IMAGE = "${DOCKER_REGISTRY}/${IMAGE_REPO}:${IMAGE_TAG}"
+  }
+
+  options {
+    skipDefaultCheckout(true)
+    timestamps()
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Setup Python & Install Deps') {
+      steps {
+        dir('backend') {
+          sh 'python3 -m venv .venv'
+          sh '. .venv/bin/activate && pip install --upgrade pip && pip install -r requirements.txt'
+        }
+      }
+    }
+
+    stage('Test') {
+      steps {
+        dir('backend') {
+          sh '. .venv/bin/activate && pytest -q'
+        }
+      }
+      post {
+        always {
+          junit allowEmptyResults: true, testResults: '**/pytest-report.xml'
+        }
+      }
+    }
+
+    stage('Docker Build') {
+      steps {
+        sh 'docker build -t ${IMAGE} -f docker/Dockerfile .'
+      }
+    }
+
+    stage('Docker Push') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'docker-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh 'echo $DOCKER_PASS | docker login ${DOCKER_REGISTRY} -u ${DOCKER_USER} --password-stdin'
+          sh 'docker push ${IMAGE}'
+        }
+      }
+    }
+
+    stage('Deploy to Kubernetes') {
+      steps {
+        withCredentials([file(credentialsId: 'kubeconfig-file', variable: 'KUBECONFIG_FILE')]) {
+          sh 'export KUBECONFIG=$KUBECONFIG_FILE && kubectl apply -f k8s/deployment.yaml'
+          sh 'export KUBECONFIG=$KUBECONFIG_FILE && kubectl apply -f k8s/service.yaml'
+          sh 'export KUBECONFIG=$KUBECONFIG_FILE && kubectl apply -f k8s/configmap.yaml'
+          sh 'export KUBECONFIG=$KUBECONFIG_FILE && kubectl set image deployment/telecom-cdr telecom-cdr=${IMAGE}'
+        }
+      }
+    }
+  }
+}

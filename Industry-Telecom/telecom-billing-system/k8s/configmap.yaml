@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telecom-cdr-config
+  labels:
+    app: telecom-cdr
+data:
+  APP_NAME: "telecom-billing-cdr"
+  DATABASE_URL: "sqlite:///./telecom.db"
